@@ -7,13 +7,13 @@ import "time"
 type Reason string
 
 const (
-	ReasonFieldMissing    Reason = "field_missing"    // 必需字段缺失
-	ReasonTypeConflict    Reason = "type_conflict"    // 字段类型与契约冲突
+	ReasonFieldMissing     Reason = "field_missing"     // 必需字段缺失
+	ReasonTypeConflict     Reason = "type_conflict"     // 字段类型与契约冲突
 	ReasonConstraintBreach Reason = "constraint_breach" // 约束越界
-	ReasonDuplicateKey    Reason = "duplicate_key"    // 键组重复
-	ReasonSchemaRejected  Reason = "schema_rejected"  // 结构不兼容被拒绝
-	ReasonValidatorFault  Reason = "validator_fault"  // 自定义校验逻辑故障(panic/超时)
-	ReasonCustomCheck     Reason = "custom_check"     // 自定义校验逻辑判定不合法
+	ReasonDuplicateKey     Reason = "duplicate_key"     // 键组重复
+	ReasonSchemaRejected   Reason = "schema_rejected"   // 结构不兼容被拒绝
+	ReasonValidatorFault   Reason = "validator_fault"   // 自定义校验逻辑故障(panic/超时)
+	ReasonCustomCheck      Reason = "custom_check"      // 自定义校验逻辑判定不合法
 )
 
 // FieldType 是契约支持的字段类型。

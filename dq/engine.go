@@ -47,7 +47,7 @@ func WithClock(now func() time.Time) Option {
 // NewEngine 创建引擎，initial 为初始契约(版本建议从 1 起)。
 func NewEngine(initial Contract, opts ...Option) *Engine {
 	e := &Engine{
-		contract: initial,
+		contract: cloneContract(initial),
 		timeout:  time.Second,
 		monitor:  NewMonitor(),
 	}
@@ -72,9 +72,9 @@ func (e *Engine) Submit(ctx context.Context, b Batch) (res ValidationResult, err
 		return ValidationResult{BatchID: b.ID}, err
 	}
 
-	// 获取契约一致性快照。
+	// 获取契约一致性快照(深拷贝，演进不会造成半新半旧判定)。
 	e.mu.RLock()
-	c := e.contract
+	c := cloneContract(e.contract)
 	custom := append([]CustomValidator(nil), e.custom...)
 	timeout := e.timeout
 	e.mu.RUnlock()
@@ -91,57 +91,19 @@ func (e *Engine) Submit(ctx context.Context, b Batch) (res ValidationResult, err
 //   - CompatBypass: 不兼容时忽略本次演进(旁路)，返回 nil；
 //   - CompatWarn:   不兼容时仍应用新版本，并记录告警。
 func (e *Engine) Evolve(c Contract) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if c.Version <= e.contract.Version {
-		return fmt.Errorf("dq: contract version must increase (current %d, got %d)",
-			e.contract.Version, c.Version)
-	}
-	incompat := CheckCompatibility(e.contract, c)
-	if len(incompat) > 0 {
-		switch e.compat {
-		case CompatReject:
-			return fmt.Errorf("dq: incompatible contract evolution rejected: %v", incompat)
-		case CompatBypass:
-			e.warnings = append(e.warnings,
-				fmt.Sprintf("contract v%d bypassed due to incompatibility: %v", c.Version, incompat))
-			return nil
-		case CompatWarn:
-			e.warnings = append(e.warnings,
-				fmt.Sprintf("contract v%d applied despite incompatibility: %v", c.Version, incompat))
-		}
-	}
-	e.contract = c
-	return nil
+	return e.EvolveDetailed(c).Err
 }
 
-// CheckCompatibility 返回从 old 演进到 next 的不兼容项列表。
-// 兼容的变化：新增可选字段、放宽约束。
-// 不兼容的变化：删除字段、字段类型变化、新增必需字段、键组变化。
+// CheckCompatibility 返回从 old 演进到 next 的不兼容项描述列表。
+// 判定细节见 AnalyzeEvolution：除既有的删除字段/类型变化/新增必需字段/
+// 键组变化外，还包括必填收紧(可选 -> 必填)与约束收窄(min/max/maxLen)；
+// 放宽约束、必填放松为可选不算不兼容。
 func CheckCompatibility(old, next Contract) []string {
 	var out []string
-	oldIdx := old.fieldIndex()
-	for _, nf := range next.Fields {
-		of, ok := oldIdx[nf.Name]
-		if !ok {
-			if nf.Required {
-				out = append(out, fmt.Sprintf("new required field %q", nf.Name))
-			}
-			continue
+	for _, c := range AnalyzeEvolution(old, next) {
+		if !c.Compatible {
+			out = append(out, c.String())
 		}
-		if of.Type != nf.Type {
-			out = append(out, fmt.Sprintf("field %q type changed %s -> %s", nf.Name, of.Type, nf.Type))
-		}
-	}
-	nextIdx := next.fieldIndex()
-	for _, of := range old.Fields {
-		if _, ok := nextIdx[of.Name]; !ok {
-			out = append(out, fmt.Sprintf("field %q removed", of.Name))
-		}
-	}
-	if !equalStrings(old.KeyGroup, next.KeyGroup) {
-		out = append(out, "key group changed")
 	}
 	return out
 }

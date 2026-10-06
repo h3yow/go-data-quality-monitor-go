@@ -58,9 +58,9 @@ func TestValidateConstraintBreach(t *testing.T) {
 	v := NewValidator(testContract(), nil, 0)
 	b := Batch{ID: "b-constraint", Seq: 1, Records: []Record{
 		{"id": 1, "name": "this-name-is-way-too-long"},   // MaxLen 越界
-		{"id": 2, "name": "ok", "age": 200},               // Max 越界
-		{"id": 3, "name": "ok", "age": -1},                // Min 越界
-		{"id": 4, "name": "ok", "age": 30, "score": 9.5},  // 合法
+		{"id": 2, "name": "ok", "age": 200},              // Max 越界
+		{"id": 3, "name": "ok", "age": -1},               // Min 越界
+		{"id": 4, "name": "ok", "age": 30, "score": 9.5}, // 合法
 	}}
 	res := v.Validate(b)
 	for _, viol := range res.Violations {

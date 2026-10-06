@@ -52,9 +52,9 @@ func (s *fieldStat) stddev() float64 {
 // 乱序批次不会导致水位倒退或重复计数。
 type Monitor struct {
 	mu            sync.Mutex
-	seen          map[string]struct{}  // 已处理批次 ID
-	seqs          map[uint64]struct{}  // 已观察批次序号
-	watermark     uint64               // 连续确认水位
+	seen          map[string]struct{} // 已处理批次 ID
+	seqs          map[uint64]struct{} // 已观察批次序号
+	watermark     uint64              // 连续确认水位
 	totalAccepted int
 	totalViol     int
 	fieldPresent  map[string]int // 字段非空记录数
