@@ -85,63 +85,56 @@ func (e *Engine) Submit(ctx context.Context, b Batch) (res ValidationResult, err
 	return res, nil
 }
 
-// Evolve 将契约升级到新版本。
+// Evolve 将契约升级到新版本，行为同 EvolveWithReport，但不返回报告。
+func (e *Engine) Evolve(c Contract) error {
+	_, err := e.EvolveWithReport(c)
+	return err
+}
+
+// EvolveWithReport 将契约升级到新版本，并返回逐项可解释的兼容性报告。
 // 新版本号必须严格大于当前版本。兼容性按引擎策略处理：
 //   - CompatReject: 不兼容时返回错误，契约保持不变；
 //   - CompatBypass: 不兼容时忽略本次演进(旁路)，返回 nil；
 //   - CompatWarn:   不兼容时仍应用新版本，并记录告警。
-func (e *Engine) Evolve(c Contract) error {
+//
+// 无论策略如何，返回的报告都完整描述每一项变化及其兼容性判定。
+func (e *Engine) EvolveWithReport(c Contract) (CompatibilityReport, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if c.Version <= e.contract.Version {
-		return fmt.Errorf("dq: contract version must increase (current %d, got %d)",
-			e.contract.Version, c.Version)
+		return CompatibilityReport{FromVersion: e.contract.Version, ToVersion: c.Version},
+			fmt.Errorf("dq: contract version must increase (current %d, got %d)",
+				e.contract.Version, c.Version)
 	}
-	incompat := CheckCompatibility(e.contract, c)
-	if len(incompat) > 0 {
+	rep := AnalyzeCompatibility(e.contract, c)
+	if !rep.Compatible() {
+		incompat := rep.Incompatible()
 		switch e.compat {
 		case CompatReject:
-			return fmt.Errorf("dq: incompatible contract evolution rejected: %v", incompat)
+			return rep, fmt.Errorf("dq: incompatible contract evolution rejected: %v", incompat)
 		case CompatBypass:
 			e.warnings = append(e.warnings,
 				fmt.Sprintf("contract v%d bypassed due to incompatibility: %v", c.Version, incompat))
-			return nil
+			return rep, nil
 		case CompatWarn:
 			e.warnings = append(e.warnings,
 				fmt.Sprintf("contract v%d applied despite incompatibility: %v", c.Version, incompat))
 		}
 	}
 	e.contract = c
-	return nil
+	return rep, nil
 }
 
 // CheckCompatibility 返回从 old 演进到 next 的不兼容项列表。
-// 兼容的变化：新增可选字段、放宽约束。
-// 不兼容的变化：删除字段、字段类型变化、新增必需字段、键组变化。
+// 兼容的变化：新增可选字段、必需放宽为可选、约束放宽或移除。
+// 不兼容的变化：删除字段、字段类型变化、新增必需字段、可选收紧为必需、
+// 新增约束或约束收窄、键组变化。
 func CheckCompatibility(old, next Contract) []string {
+	rep := AnalyzeCompatibility(old, next)
 	var out []string
-	oldIdx := old.fieldIndex()
-	for _, nf := range next.Fields {
-		of, ok := oldIdx[nf.Name]
-		if !ok {
-			if nf.Required {
-				out = append(out, fmt.Sprintf("new required field %q", nf.Name))
-			}
-			continue
-		}
-		if of.Type != nf.Type {
-			out = append(out, fmt.Sprintf("field %q type changed %s -> %s", nf.Name, of.Type, nf.Type))
-		}
-	}
-	nextIdx := next.fieldIndex()
-	for _, of := range old.Fields {
-		if _, ok := nextIdx[of.Name]; !ok {
-			out = append(out, fmt.Sprintf("field %q removed", of.Name))
-		}
-	}
-	if !equalStrings(old.KeyGroup, next.KeyGroup) {
-		out = append(out, "key group changed")
+	for _, ch := range rep.Incompatible() {
+		out = append(out, ch.Detail)
 	}
 	return out
 }
@@ -161,6 +154,11 @@ func equalStrings(a, b []string) bool {
 // Metrics 返回当前监控指标的一致性快照。
 func (e *Engine) Metrics() Metrics {
 	return e.monitor.Snapshot()
+}
+
+// SeenBatch 报告批次 ID 是否已被监控计入(重复提交会被幂等忽略)。
+func (e *Engine) SeenBatch(id string) bool {
+	return e.monitor.Seen(id)
 }
 
 // Warnings 返回引擎级告警(如契约演进告警)的副本。

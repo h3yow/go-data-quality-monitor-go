@@ -166,6 +166,14 @@ func numericFields(c Contract) []string {
 	return out
 }
 
+// Seen 报告批次 ID 是否已被监控计入(用于判定重复投递)。
+func (m *Monitor) Seen(id string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	_, ok := m.seen[id]
+	return ok
+}
+
 // Snapshot 返回当前指标的一致性快照(深拷贝，可安全并发读取)。
 func (m *Monitor) Snapshot() Metrics {
 	m.mu.Lock()
